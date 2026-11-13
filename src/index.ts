@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { autoRetry } from "@grammyjs/auto-retry";
 import { createBot, COMMANDS } from "./bot.js";
 import { ConfigError, loadConfig } from "./config.js";

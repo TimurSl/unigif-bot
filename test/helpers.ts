@@ -27,6 +27,7 @@ export function baseConfig(over: Partial<Config> = {}): Config {
     maxUploadBytes: 20_000_000,
     inlineUploadBudgetMs: 500,
     inlineCacheSecs: 30,
+    telegramApiRoot: "https://api.telegram.org",
     ...over,
   };
 }

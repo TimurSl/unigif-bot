@@ -17,7 +17,7 @@ export const COMMANDS = [
 
 export function createBot(deps: { config: Config; client: UnigifClient; store: FileIdStore; log: Logger }): Bot {
   const { config, client, store, log } = deps;
-  const bot = new Bot(config.botToken);
+  const bot = new Bot(config.botToken, { client: { apiRoot: config.telegramApiRoot } });
 
   const isAllowed = (userId: number) => config.allowedUserIds === null || config.allowedUserIds.has(userId);
   const sender = new GifSender({ api: bot.api, client, store, config, log });

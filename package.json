@@ -5,6 +5,12 @@
   "private": true,
   "type": "module",
   "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "unigif-bot": "dist/index.js"
+  },
   "engines": {
     "node": ">=22"
   },

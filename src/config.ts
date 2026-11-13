@@ -1,5 +1,7 @@
 /** Runtime configuration, read from environment variables. */
 
+import { readFileSync } from "node:fs";
+
 export interface Config {
   /** Telegram bot token from @BotFather. */
   botToken: string;
@@ -33,11 +35,33 @@ export interface Config {
   inlineUploadBudgetMs: number;
   /** How long Telegram may cache an inline answer, in seconds. */
   inlineCacheSecs: number;
+  /** Where the Bot API lives; change it to use a self-hosted Bot API server. */
+  telegramApiRoot: string;
 }
 
 export class ConfigError extends Error {}
 
 type Env = Record<string, string | undefined>;
+
+/**
+ * A secret is given either directly (`NAME`) or as the path of a file holding it (`NAME_FILE`), which is how
+ * systemd credentials, Docker secrets and agenix / sops-nix hand secrets over without putting them in the
+ * environment.
+ */
+function secret(env: Env, name: string, problems: string[]): string {
+  const file = env[`${name}_FILE`]?.trim();
+  if (file) {
+    try {
+      const v = readFileSync(file, "utf8").trim();
+      if (!v) problems.push(`${name}_FILE (${file}) is empty`);
+      return v;
+    } catch (err) {
+      problems.push(`${name}_FILE: cannot read ${file} (${(err as NodeJS.ErrnoException).code ?? "error"})`);
+      return "";
+    }
+  }
+  return required(env, name, problems);
+}
 
 function required(env: Env, name: string, problems: string[]): string {
   const v = env[name]?.trim();
@@ -70,7 +94,7 @@ function bool(env: Env, name: string): boolean {
 export function loadConfig(env: Env = process.env): Config {
   const problems: string[] = [];
 
-  const botToken = required(env, "TELEGRAM_BOT_TOKEN", problems);
+  const botToken = secret(env, "TELEGRAM_BOT_TOKEN", problems);
   if (botToken && !/^\d+:[\w-]{20,}$/.test(botToken)) {
     problems.push("TELEGRAM_BOT_TOKEN does not look like a bot token (expected 123456:ABC…)");
   }
@@ -87,7 +111,7 @@ export function loadConfig(env: Env = process.env): Config {
     }
   }
 
-  const unigifKey = required(env, "UNIGIF_API_KEY", problems);
+  const unigifKey = secret(env, "UNIGIF_API_KEY", problems);
 
   let allowedUserIds: Set<number> | null = null;
   const rawAllowed = env["ALLOWED_USER_IDS"]?.trim();
@@ -125,6 +149,15 @@ export function loadConfig(env: Env = process.env): Config {
   const sort = (env["SORT"]?.trim() || "used") as Config["sort"];
   if (!["new", "old", "used"].includes(sort)) problems.push("SORT must be new, old or used");
 
+  let telegramApiRoot = (env["TELEGRAM_API_ROOT"]?.trim() || "https://api.telegram.org").replace(/\/+$/, "");
+  try {
+    const u = new URL(telegramApiRoot);
+    if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("scheme");
+  } catch {
+    problems.push("TELEGRAM_API_ROOT must be an http(s) URL such as https://api.telegram.org");
+    telegramApiRoot = "https://api.telegram.org";
+  }
+
   const config: Config = {
     botToken,
     unigifUrl,
@@ -139,6 +172,7 @@ export function loadConfig(env: Env = process.env): Config {
     maxUploadBytes: integer(env, "MAX_UPLOAD_BYTES", 20_000_000, 1, 50_000_000, problems),
     inlineUploadBudgetMs: integer(env, "INLINE_UPLOAD_BUDGET_MS", 4000, 0, 20_000, problems),
     inlineCacheSecs: integer(env, "INLINE_CACHE_SECS", 30, 0, 3600, problems),
+    telegramApiRoot,
   };
 
   if (problems.length > 0) {

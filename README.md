@@ -74,6 +74,37 @@ node --env-file=.env dist/index.js
 
 On start the bot checks that Unigif and Telegram accept it, and warns about anything that will make it less useful (inline mode off, no storage chat, open to everybody).
 
+## Deploy on NixOS
+
+The flake exports `nixosModules.default` (`services.unigif-bot`): a hardened systemd service that runs as a dynamic user, takes the bot token and the Unigif key as systemd credentials from files (so they work with agenix and sops-nix and never enter the Nix store or the process environment), and keeps its file-id cache in `/var/lib/unigif-bot`.
+
+```nix
+{
+  inputs.unigif-bot.url = "github:TimurSl/unigif-bot";
+  # ...
+}
+```
+
+```nix
+{ config, inputs, ... }:
+{
+  imports = [ inputs.unigif-bot.nixosModules.default ];
+
+  services.unigif-bot = {
+    enable = true;
+    unigifUrl = "http://127.0.0.1:8787";          # Unigif on this machine; or its https:// address
+    botTokenFile = config.age.secrets.telegram-bot-token.path;
+    apiKeyFile = config.age.secrets.unigif-bot-key.path;
+    allowedUserIds = [ 123456789 ];
+    storageChatId = -1001234567890;               # see "Set it up", step 3
+  };
+}
+```
+
+`unigif-ctl key create --name telegram --preset read_only` (from Unigif's own module) makes the key. Do the @BotFather steps in "Set it up" first. All the settings in the table below are options of the module (`sort`, `inlinePageSize`, `chatPageSize`, `inlineUrlMaxBytes`, …); `environmentFile` takes anything else. Because the bot fetches GIFs from `unigifUrl`, pointing it at Unigif's loopback address keeps that traffic off the network.
+
+Without the module, `nix run github:TimurSl/unigif-bot` starts the bot with the environment variables from the table below, and `nix build` makes `./result/bin/unigif-bot`. `nix flake check` builds the package (running the tests) and boots a NixOS VM that runs the real service against a fake Telegram and a fake Unigif.
+
 ## Configuration
 
 All settings are environment variables.
@@ -83,6 +114,8 @@ All settings are environment variables.
 | `TELEGRAM_BOT_TOKEN` | required | Bot token from @BotFather |
 | `UNIGIF_URL` | required | Base URL of the Unigif server |
 | `UNIGIF_API_KEY` | required | Unigif key with the `read` scope |
+| `TELEGRAM_BOT_TOKEN_FILE`, `UNIGIF_API_KEY_FILE` | none | Path of a file holding that secret, instead of putting it in the variable (systemd credentials, Docker secrets, agenix, sops-nix) |
+| `TELEGRAM_API_ROOT` | `https://api.telegram.org` | A self-hosted Bot API server, if you run one |
 | `ALLOWED_USER_IDS` | required* | Telegram user ids allowed to use the bot, comma separated |
 | `ALLOW_ANYONE` | off | `true` instead of `ALLOWED_USER_IDS`: anybody can search your library |
 | `STORAGE_CHAT_ID` | none | Private chat or channel for one-time uploads (see step 3) |
@@ -120,7 +153,10 @@ npm ci
 npm run typecheck
 npm test               # unit and handler tests; Telegram and Unigif are faked
 npm run dev            # restart on change, reads .env
+nix develop            # a shell with Node, if you use Nix
 ```
+
+After changing `package-lock.json`, update `npmDepsHash` in `nix/package.nix`: set it to `lib.fakeHash`, run `nix build`, and copy the hash from the error.
 
 The end-to-end tests run the real Unigif server and real ffmpeg, with only Telegram faked. They are skipped unless you point them at the binary:
 
